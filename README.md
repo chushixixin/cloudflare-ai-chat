@@ -3,9 +3,9 @@
 > 基于 Cloudflare Workers AI 的零成本、Serverless 流式对话应用  
 > **在线演示**：[chat.chusxxin.cyou](https://chat.chusxxin.cyou)
 
-![界面截图](./images/1.png)
-![界面截图](./images/2.png)
-![界面截图](./images/3.png)
+![界面截图](./src/images/1.png)
+![界面截图](./src/images/2.png)
+![界面截图](./src/images/3.png)
 
 ## 📋 项目简介
 
