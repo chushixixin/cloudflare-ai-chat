@@ -60,6 +60,7 @@ npm install
 
 # 启动开发服务器
 npm run dev
+```
 
 访问 `http://localhost:5173` 即可看到界面。
 
@@ -99,7 +100,7 @@ npm run dev
 
 本项目作为个人作品集核心，旨在证明：**学历不等于工程能力，用最小的成本也能做出专业级产品。**
 
-- GitHub：[你的用户名](https://github.com/chushixixin)
+- GitHub：https://github.com/chushixixin
 
 ## 📄 许可证
 
