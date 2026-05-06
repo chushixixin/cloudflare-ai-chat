@@ -10,7 +10,8 @@
           :class="['conv-item', { active: conv.id === conversationId }]"
           @click="loadConversation(conv.id)"
         >
-          {{ conv.title }}
+          <span class="conv-title">{{ conv.title }}</span>
+          <button class="del-btn" @click.stop="deleteConversation(conv.id)">×</button>
         </div>
       </div>
     </aside>
@@ -45,9 +46,9 @@
           v-model="inputText" 
           @keydown.enter="sendMessage" 
           placeholder="输入消息，按 Enter 发送..."
-          :disabled="isLoading"
+          :disabled="isLoading || !conversationId"
         />
-        <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">发送</button>
+        <button @click="sendMessage" :disabled="isLoading || !inputText.trim() || !conversationId">发送</button>
         <button @click="stopGeneration" :disabled="!isLoading">停止</button>
       </div>
     </div>
@@ -59,7 +60,6 @@ import { ref, nextTick, onMounted } from 'vue';
 
 const API_URL = 'https://chat.chusxxin.cyou';
 
-// 系统提示词（硬编码在后端，这里也保留一份）
 const SYSTEM_PROMPT = { role: 'system', content: '你是 chusxxin 的私人助手，回答简洁友好。' };
 
 // ---- 会话管理 ----
@@ -109,7 +109,7 @@ const startNewChat = async () => {
     chatHistory.value = [{ ...SYSTEM_PROMPT }];
     estimatedTokens.value = 0;
     inputText.value = '';
-    await fetchConversations();
+    await fetchConversations(); // 刷新侧边栏
   } catch (e) {
     console.error('创建新会话失败', e);
   }
@@ -129,6 +129,23 @@ const loadConversation = async (id) => {
     await scrollToBottom();
   } catch (e) {
     console.error('加载对话失败', e);
+  }
+};
+
+const deleteConversation = async (id) => {
+  if (!confirm('确定要删除这个对话吗？')) return;
+  try {
+    await fetch(`${API_URL}/conversation?id=${id}`, { method: 'DELETE' });
+    // 如果删除的是当前打开的会话，则清空界面
+    if (conversationId.value === id) {
+      conversationId.value = null;
+      messages.value = [];
+      chatHistory.value = [{ ...SYSTEM_PROMPT }];
+      estimatedTokens.value = 0;
+    }
+    await fetchConversations(); // 刷新列表
+  } catch (e) {
+    console.error('删除会话失败', e);
   }
 };
 
@@ -172,7 +189,7 @@ const editMessage = (msg) => {
 // ================= 发送消息 =================
 const sendMessage = async () => {
   const text = inputText.value.trim();
-  if (!text || isLoading.value) return;
+  if (!text || isLoading.value || !conversationId.value) return;
 
   if (abortController.value) {
     abortController.value.abort();
@@ -193,7 +210,7 @@ const sendMessage = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: chatHistory.value,
-        conversationId: conversationId.value   // 关键：告知后端所属会话
+        conversationId: conversationId.value
       }),
       signal: abortController.value.signal,
     });
@@ -257,8 +274,7 @@ const sendMessage = async () => {
 
 // ================= 入口 =================
 onMounted(async () => {
-  await fetchConversations();
-  await startNewChat(); // 自动创建一个新会话
+  await fetchConversations(); // 只拉列表，不自动创建新会话
 });
 </script>
 
@@ -308,15 +324,15 @@ onMounted(async () => {
 }
 
 .conv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 10px 12px;
   border-radius: 12px;
   cursor: pointer;
   font-size: 0.85rem;
   color: #4b5563;
   transition: background 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .conv-item:hover {
@@ -328,6 +344,30 @@ onMounted(async () => {
   color: #171717;
   font-weight: 500;
 }
+
+.conv-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+
+.del-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color 0.1s;
+}
+
+.del-btn:hover {
+  color: #ef4444;
+}
+
 
 /* ---- 主聊天区域 ---- */
 .chat-container {
