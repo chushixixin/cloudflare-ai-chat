@@ -1,58 +1,83 @@
 <template>
-  <div class="chat-container">
-    <h1>🤖 我的第一个 AI 助手</h1>
-    <p class="subtitle">Powered by Cloudflare AI + Vue 3</p>
-    
-    <div class="chat-box" ref="chatBox">
-      <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
-        <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
-        <div class="content">{{ msg.content }}</div>
-        <div class="message-actions">
-          <button v-if="msg.role === 'assistant'" @click="regenerate" title="重新生成">🔄</button>
-          <button v-if="msg.role === 'user'" @click="editMessage(msg)" title="编辑">✏️</button>
+  <div class="chat-layout">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <button class="new-chat-btn" @click="startNewChat">+ 新对话</button>
+      <div class="conv-list">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          :class="['conv-item', { active: conv.id === conversationId }]"
+          @click="loadConversation(conv.id)"
+        >
+          {{ conv.title }}
         </div>
       </div>
-      <div v-if="isLoading" class="message assistant">
-        <div class="avatar">🤖</div>
-        <div class="content typing">正在思考中...</div>
+    </aside>
+
+    <!-- 主聊天区 -->
+    <div class="chat-container">
+      <h1>🤖 我的第一个 AI 助手</h1>
+      <p class="subtitle">Powered by Cloudflare AI + Vue 3 + D1 持久化</p>
+      
+      <div class="chat-box" ref="chatBox">
+        <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
+          <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
+          <div class="content">{{ msg.content }}</div>
+          <div class="message-actions">
+            <button v-if="msg.role === 'assistant'" @click="regenerate" title="重新生成">🔄</button>
+            <button v-if="msg.role === 'user'" @click="editMessage(msg)" title="编辑">✏️</button>
+          </div>
+        </div>
+        <div v-if="isLoading" class="message assistant">
+          <div class="avatar">🤖</div>
+          <div class="content typing">正在思考中...</div>
+        </div>
       </div>
-    </div>
 
-    <div class="token-info">
-      📊 上下文用量: {{ estimatedTokens }} / {{ MAX_TOKENS }} tokens
-      <span v-if="estimatedTokens > MAX_TOKENS * 0.8" style="color: orange;">⚠️ 接近上限</span>
-    </div>
+      <div class="token-info">
+        📊 上下文用量: {{ estimatedTokens }} / {{ MAX_TOKENS }} tokens
+        <span v-if="estimatedTokens > MAX_TOKENS * 0.8" style="color: orange;">⚠️ 接近上限</span>
+      </div>
 
-    <div class="input-area">
-      <input 
-        v-model="inputText" 
-        @keydown.enter="sendMessage" 
-        placeholder="输入消息，按 Enter 发送..."
-        :disabled="isLoading"
-      />
-      <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">发送</button>
-      <button @click="stopGeneration" :disabled="!isLoading">停止</button>
+      <div class="input-area">
+        <input 
+          v-model="inputText" 
+          @keydown.enter="sendMessage" 
+          placeholder="输入消息，按 Enter 发送..."
+          :disabled="isLoading"
+        />
+        <button @click="sendMessage" :disabled="isLoading || !inputText.trim()">发送</button>
+        <button @click="stopGeneration" :disabled="!isLoading">停止</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, onMounted } from 'vue';
 
 const API_URL = 'https://chat.chusxxin.cyou';
 
-const chatHistory = ref([
-  { role: 'system', content: '你是 chusxxin 的私人助手，回答简洁友好。' }
-]);
+// 系统提示词（硬编码在后端，这里也保留一份）
+const SYSTEM_PROMPT = { role: 'system', content: '你是 chusxxin 的私人助手，回答简洁友好。' };
 
-const abortController = ref(null);
-const inputText = ref('');
+// ---- 会话管理 ----
+const conversationId = ref(null);
+const conversations = ref([]);
+
+// ---- 聊天状态 ----
+const chatHistory = ref([{ ...SYSTEM_PROMPT }]);
 const messages = ref([]);
+const inputText = ref('');
 const isLoading = ref(false);
-const chatBox = ref(null);
 const estimatedTokens = ref(0);
 const MAX_TOKENS = 8000;
 
+const abortController = ref(null);
+const chatBox = ref(null);
+
+// ================= 辅助函数 =================
 const scrollToBottom = async () => {
   await nextTick();
   if (chatBox.value) {
@@ -60,6 +85,54 @@ const scrollToBottom = async () => {
   }
 };
 
+const updateTokenEstimate = () => {
+  const allText = messages.value.map(m => m.content).join(' ');
+  estimatedTokens.value = Math.ceil(allText.length / 2.5);
+};
+
+// ================= 会话操作 =================
+const fetchConversations = async () => {
+  try {
+    const res = await fetch(`${API_URL}/conversations`);
+    conversations.value = await res.json();
+  } catch (e) {
+    console.error('获取会话列表失败', e);
+  }
+};
+
+const startNewChat = async () => {
+  try {
+    const res = await fetch(`${API_URL}/conversations`, { method: 'POST' });
+    const data = await res.json();
+    conversationId.value = data.id;
+    messages.value = [];
+    chatHistory.value = [{ ...SYSTEM_PROMPT }];
+    estimatedTokens.value = 0;
+    inputText.value = '';
+    await fetchConversations();
+  } catch (e) {
+    console.error('创建新会话失败', e);
+  }
+};
+
+const loadConversation = async (id) => {
+  try {
+    const res = await fetch(`${API_URL}/conversation?id=${id}`);
+    const history = await res.json(); // [{role, content}, ...]
+    conversationId.value = id;
+    messages.value = history.map(m => ({ role: m.role, content: m.content }));
+    chatHistory.value = [
+      { ...SYSTEM_PROMPT },
+      ...history.map(m => ({ role: m.role, content: m.content }))
+    ];
+    updateTokenEstimate();
+    await scrollToBottom();
+  } catch (e) {
+    console.error('加载对话失败', e);
+  }
+};
+
+// ================= 交互按钮 =================
 const stopGeneration = () => {
   if (abortController.value) {
     abortController.value.abort();
@@ -96,11 +169,7 @@ const editMessage = (msg) => {
   document.querySelector('input')?.focus();
 };
 
-const updateTokenEstimate = () => {
-  const allText = messages.value.map(m => m.content).join(' ');
-  estimatedTokens.value = Math.ceil(allText.length / 2.5);
-};
-
+// ================= 发送消息 =================
 const sendMessage = async () => {
   const text = inputText.value.trim();
   if (!text || isLoading.value) return;
@@ -116,14 +185,16 @@ const sendMessage = async () => {
   
   inputText.value = '';
   await scrollToBottom();
-
   isLoading.value = true;
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(`${API_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatHistory.value }),
+      body: JSON.stringify({
+        messages: chatHistory.value,
+        conversationId: conversationId.value   // 关键：告知后端所属会话
+      }),
       signal: abortController.value.signal,
     });
 
@@ -183,23 +254,90 @@ const sendMessage = async () => {
     await scrollToBottom();
   }
 };
+
+// ================= 入口 =================
+onMounted(async () => {
+  await fetchConversations();
+  await startNewChat(); // 自动创建一个新会话
+});
 </script>
 
 <style scoped>
-* {
-  box-sizing: border-box;
-  margin: 0;
+/* ---- 整体布局 ---- */
+.chat-layout {
+  display: flex;
+  height: 100vh;
+  background: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
 }
 
+/* ---- 侧边栏 ---- */
+.sidebar {
+  width: 260px;
+  background: #ffffff;
+  border-right: 1px solid #f0f0f2;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.new-chat-btn {
+  background: #18181b;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.new-chat-btn:hover {
+  background: #2c2c30;
+  transform: scale(1.02);
+}
+
+.conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conv-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #4b5563;
+  transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-item:hover {
+  background: #f3f4f6;
+}
+
+.conv-item.active {
+  background: #f3f4f6;
+  color: #171717;
+  font-weight: 500;
+}
+
+/* ---- 主聊天区域 ---- */
 .chat-container {
-  max-width: 880px;
+  flex: 1;
+  max-width: 860px;
   margin: 0 auto;
   padding: 24px 20px;
-  height: 100vh;
   display: flex;
   flex-direction: column;
   background: #fafafa;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
 }
 
 h1 {
@@ -229,32 +367,29 @@ h1 {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.03);
   margin-bottom: 20px;
-  scroll-behavior: smooth;
 }
 
+/* 自定义滚动条 */
 .chat-box::-webkit-scrollbar {
   width: 6px;
 }
-
 .chat-box::-webkit-scrollbar-track {
   background: transparent;
 }
-
 .chat-box::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 12px;
 }
 
+/* 消息气泡 */
 .message {
   display: flex;
   margin-bottom: 24px;
   gap: 12px;
 }
-
 .message.user {
   flex-direction: row-reverse;
 }
-
 .avatar {
   width: 34px;
   height: 34px;
@@ -264,17 +399,14 @@ h1 {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
   flex-shrink: 0;
-  transition: transform 0.1s ease;
 }
-
 .message.user .avatar {
   background: #18181b;
   color: #fafafa;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
-
 .content {
   background: #ffffff;
   padding: 14px 18px;
@@ -284,17 +416,15 @@ h1 {
   font-size: 0.95rem;
   line-height: 1.55;
   color: #1f2937;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
   border: 1px solid #f0f0f2;
 }
-
 .message.user .content {
   background: #18181b;
   color: #ffffff;
   border: none;
-  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 8px -2px rgba(0,0,0,0.08);
 }
-
 .typing {
   color: #9ca3af;
   font-style: normal;
@@ -302,7 +432,6 @@ h1 {
   align-items: center;
   gap: 4px;
 }
-
 .typing::after {
   content: '';
   width: 6px;
@@ -312,12 +441,12 @@ h1 {
   display: inline-block;
   animation: pulse 1.2s infinite;
 }
-
 @keyframes pulse {
   0%, 100% { opacity: 0.3; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1); }
 }
 
+/* 消息操作按钮 */
 .message-actions {
   display: flex;
   gap: 8px;
@@ -326,11 +455,9 @@ h1 {
   transition: opacity 0.2s ease;
   align-self: flex-end;
 }
-
 .message:hover .message-actions {
   opacity: 1;
 }
-
 .message-actions button {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -346,7 +473,6 @@ h1 {
   align-items: center;
   gap: 4px;
 }
-
 .message-actions button:hover {
   background: #f9fafb;
   border-color: #18181b;
@@ -354,6 +480,7 @@ h1 {
   box-shadow: 0 4px 8px -2px rgba(0,0,0,0.06);
 }
 
+/* Token 用量 */
 .token-info {
   text-align: right;
   font-size: 0.8rem;
@@ -364,6 +491,7 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* 输入区 */
 .input-area {
   display: flex;
   gap: 12px;
@@ -374,12 +502,10 @@ h1 {
   border: 1px solid #f0f0f2;
   transition: box-shadow 0.2s;
 }
-
 .input-area:focus-within {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04), 0 0 0 2px rgba(24, 24, 27, 0.05);
   border-color: transparent;
 }
-
 input {
   flex: 1;
   border: none;
@@ -389,12 +515,10 @@ input {
   background: transparent;
   color: #171717;
 }
-
 input::placeholder {
   color: #cbd5e1;
   font-weight: 350;
 }
-
 button {
   background: #18181b;
   color: white;
@@ -408,24 +532,20 @@ button {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
   letter-spacing: -0.01em;
 }
-
 button:hover:not(:disabled) {
   background: #2c2c30;
   box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.08);
   transform: scale(1.02);
 }
-
 button:active:not(:disabled) {
   transform: scale(0.98);
 }
-
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
 }
-
 .input-area button:last-of-type {
   background: #ffffff;
   color: #4b5563;
@@ -433,27 +553,27 @@ button:disabled {
   box-shadow: none;
   padding: 10px 20px;
 }
-
 .input-area button:last-of-type:hover:not(:disabled) {
   background: #f3f4f6;
   border-color: #d1d5db;
   color: #18181b;
 }
 
-@media (max-width: 600px) {
+/* 移动端适配 */
+@media (max-width: 700px) {
+  .sidebar {
+    display: none; /* 小屏幕隐藏侧边栏 */
+  }
   .chat-container {
     padding: 12px;
   }
-  
   .content {
     max-width: 85%;
     padding: 12px 14px;
   }
-  
   .input-area {
     padding: 6px 6px 6px 16px;
   }
-  
   button {
     padding: 8px 16px;
   }
