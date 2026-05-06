@@ -279,6 +279,16 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+
+* {
+  box-sizing: border-box;
+}
+/* 移除全局 margin:0，改用具体元素定义 */
+body, h1, p, input, button {
+  margin: 0;
+  padding: 0;
+}
+
 /* ---- 整体布局 ---- */
 .chat-layout {
   display: flex;
@@ -550,7 +560,7 @@ input {
   flex: 1;
   border: none;
   outline: none;
-  font-size: 0.95rem;
+  font-size: 16px;
   padding: 12px 0;
   background: transparent;
   color: #171717;
@@ -696,24 +706,6 @@ button:disabled {
   /* 停止按钮的次要样式也保持 */
   .input-area button:last-of-type {
     padding: 8px 14px;
-  }
-
-  /* 上传按钮（label 模拟按钮） */
-  .upload-btn {
-    width: 44px;
-    height: 44px;
-    font-size: 1.2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-  }
-
-  /* 上传状态提示 */
-  .upload-status {
-    font-size: 0.7rem;
-    padding-left: 8px;
-    margin-top: 4px;
   }
 
   /* 消息操作按钮保持可用 */
