@@ -58,7 +58,7 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue';
 
-const API_URL = 'https://chat.chusxxin.cyou';
+const API_URL = 'https://worker.chusxxin.cyou';
 
 const SYSTEM_PROMPT = { role: 'system', content: '你是 chusxxin 的私人助手，回答简洁友好。' };
 
