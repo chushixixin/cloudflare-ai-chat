@@ -5,7 +5,6 @@
 
 ![界面截图](./src/images/1.png)
 ![界面截图](./src/images/2.png)
-![界面截图](./src/images/3.png)
 
 ## 📋 项目简介
 
