@@ -601,21 +601,125 @@ button:disabled {
 
 /* 移动端适配 */
 @media (max-width: 700px) {
+  /* 隐藏侧边栏，让主区域占满全屏 */
   .sidebar {
-    display: none; /* 小屏幕隐藏侧边栏 */
+    display: none;
   }
+
+  /* 主布局改为纯聊天区，取消 flex 布局 */
+  .chat-layout {
+    display: block;
+    height: 100vh;
+    padding: 0;
+  }
+
+  /* 主聊天区域全宽，减少内边距 */
   .chat-container {
-    padding: 12px;
+    max-width: 100%;
+    margin: 0;
+    padding: 12px 10px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
+
+  /* 标题和副标题缩小 */
+  h1 {
+    font-size: 1.4rem;
+    margin-bottom: 2px;
+  }
+  .subtitle {
+    font-size: 0.75rem;
+    margin-bottom: 12px;
+  }
+
+  /* 聊天消息区域自动填充剩余空间 */
+  .chat-box {
+    flex: 1;
+    padding: 12px;
+    border-radius: 16px;
+    margin-bottom: 10px;
+  }
+
+  /* 消息气泡宽度更宽，充分利用空间 */
   .content {
     max-width: 85%;
-    padding: 12px 14px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
   }
+  .message.user .content {
+    max-width: 85%;
+  }
+
+  /* 确保头像在小屏幕上不被挤压 */
+  .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  /* Token 信息缩小 */
+  .token-info {
+    font-size: 0.7rem;
+    margin-bottom: 6px;
+  }
+
+  /* 输入区域移动端优化 */
   .input-area {
-    padding: 6px 6px 6px 16px;
+    padding: 6px 8px 6px 14px;
+    border-radius: 40px;
+    gap: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   }
+
+  /* 输入框 */
+  .input-area input {
+    flex: 1;
+    font-size: 16px;          /* 禁止 iOS 自动缩放 */
+    padding: 10px 0;
+    min-width: 0;
+  }
+
+  /* 所有按钮增大触控区域 */
   button {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    min-height: 44px;         /* 满足 WCAG 触控尺寸 */
+    min-width: 44px;
+  }
+
+  /* 发送按钮保持主色调 */
+  .input-area button:not(:last-child) {
     padding: 8px 16px;
+  }
+
+  /* 停止按钮的次要样式也保持 */
+  .input-area button:last-of-type {
+    padding: 8px 14px;
+  }
+
+  /* 上传按钮（label 模拟按钮） */
+  .upload-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  /* 上传状态提示 */
+  .upload-status {
+    font-size: 0.7rem;
+    padding-left: 8px;
+    margin-top: 4px;
+  }
+
+  /* 消息操作按钮保持可用 */
+  .message-actions button {
+    padding: 4px 10px;
+    font-size: 12px;
   }
 }
 </style>
