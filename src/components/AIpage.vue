@@ -1,6 +1,6 @@
 <template>
   <div class="chat-layout">
-    <!-- 侧边栏 -->
+    <!-- 侧边栏（PC 端显示） -->
     <aside class="sidebar">
       <button class="new-chat-btn" @click="startNewChat">+ 新对话</button>
       <div class="conv-list">
@@ -15,6 +15,21 @@
         </div>
       </div>
     </aside>
+
+    <!-- 移动端顶部导航栏（仅小屏显示） -->
+    <div class="mobile-nav">
+      <button class="mobile-new-chat-btn" @click="startNewChat">+ 新对话</button>
+      <select
+        v-if="conversations.length > 0"
+        v-model="selectedConvId"
+        @change="onConvSelect"
+      >
+        <option value="">📋 历史对话</option>
+        <option v-for="conv in conversations" :key="conv.id" :value="conv.id">
+          {{ conv.title }}
+        </option>
+      </select>
+    </div>
 
     <!-- 主聊天区 -->
     <div class="chat-container">
@@ -41,12 +56,13 @@
         <span v-if="estimatedTokens > MAX_TOKENS * 0.8" style="color: orange;">⚠️ 接近上限</span>
       </div>
 
+      <!-- 输入区 -->
       <div class="input-area">
         <input 
           v-model="inputText" 
           @keydown.enter="sendMessage" 
           placeholder="输入消息，按 Enter 发送..."
-          :disabled="isLoading || !conversationId"
+          :disabled="isLoading"
         />
         <button @click="sendMessage" :disabled="isLoading || !inputText.trim() || !conversationId">发送</button>
         <button @click="stopGeneration" :disabled="!isLoading">停止</button>
@@ -58,13 +74,14 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue';
 
-const API_URL = 'https://worker.chusxxin.cyou';
+const API_URL = 'https://worker.chusxxin.cyou';  // Worker 域名
 
 const SYSTEM_PROMPT = { role: 'system', content: '你是 chusxxin 的私人助手，回答简洁友好。' };
 
 // ---- 会话管理 ----
 const conversationId = ref(null);
 const conversations = ref([]);
+const selectedConvId = ref('');
 
 // ---- 聊天状态 ----
 const chatHistory = ref([{ ...SYSTEM_PROMPT }]);
@@ -109,7 +126,8 @@ const startNewChat = async () => {
     chatHistory.value = [{ ...SYSTEM_PROMPT }];
     estimatedTokens.value = 0;
     inputText.value = '';
-    await fetchConversations(); // 刷新侧边栏
+    await fetchConversations();
+    selectedConvId.value = data.id;
   } catch (e) {
     console.error('创建新会话失败', e);
   }
@@ -118,7 +136,7 @@ const startNewChat = async () => {
 const loadConversation = async (id) => {
   try {
     const res = await fetch(`${API_URL}/conversation?id=${id}`);
-    const history = await res.json(); // [{role, content}, ...]
+    const history = await res.json();
     conversationId.value = id;
     messages.value = history.map(m => ({ role: m.role, content: m.content }));
     chatHistory.value = [
@@ -127,6 +145,7 @@ const loadConversation = async (id) => {
     ];
     updateTokenEstimate();
     await scrollToBottom();
+    selectedConvId.value = id;
   } catch (e) {
     console.error('加载对话失败', e);
   }
@@ -136,16 +155,22 @@ const deleteConversation = async (id) => {
   if (!confirm('确定要删除这个对话吗？')) return;
   try {
     await fetch(`${API_URL}/conversation?id=${id}`, { method: 'DELETE' });
-    // 如果删除的是当前打开的会话，则清空界面
     if (conversationId.value === id) {
       conversationId.value = null;
       messages.value = [];
       chatHistory.value = [{ ...SYSTEM_PROMPT }];
       estimatedTokens.value = 0;
+      selectedConvId.value = '';
     }
-    await fetchConversations(); // 刷新列表
+    await fetchConversations();
   } catch (e) {
     console.error('删除会话失败', e);
+  }
+};
+
+const onConvSelect = () => {
+  if (selectedConvId.value) {
+    loadConversation(selectedConvId.value);
   }
 };
 
@@ -183,13 +208,17 @@ const editMessage = (msg) => {
       chatHistory.value.splice(historyIndex);
     }
   }
-  document.querySelector('input')?.focus();
+  document.querySelector('input[type="text"]')?.focus();
 };
 
 // ================= 发送消息 =================
 const sendMessage = async () => {
   const text = inputText.value.trim();
-  if (!text || isLoading.value || !conversationId.value) return;
+  if (!text || isLoading.value) return;
+
+  if (!conversationId.value) {
+    await startNewChat();
+  }
 
   if (abortController.value) {
     abortController.value.abort();
@@ -208,10 +237,7 @@ const sendMessage = async () => {
     const response = await fetch(`${API_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: chatHistory.value,
-        conversationId: conversationId.value
-      }),
+      body: JSON.stringify({ messages: chatHistory.value, conversationId: conversationId.value }),
       signal: abortController.value.signal,
     });
 
@@ -274,21 +300,14 @@ const sendMessage = async () => {
 
 // ================= 入口 =================
 onMounted(async () => {
-  await fetchConversations(); // 只拉列表，不自动创建新会话
+  await fetchConversations();
+  if (window.innerWidth <= 700) {
+    await startNewChat();
+  }
 });
 </script>
 
 <style scoped>
-
-* {
-  box-sizing: border-box;
-}
-/* 移除全局 margin:0，改用具体元素定义 */
-body, h1, p, input, button {
-  margin: 0;
-  padding: 0;
-}
-
 /* ---- 整体布局 ---- */
 .chat-layout {
   display: flex;
@@ -297,7 +316,7 @@ body, h1, p, input, button {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
 }
 
-/* ---- 侧边栏 ---- */
+/* ---- 侧边栏（PC） ---- */
 .sidebar {
   width: 260px;
   background: #ffffff;
@@ -308,7 +327,6 @@ body, h1, p, input, button {
   gap: 16px;
   overflow-y: auto;
 }
-
 .new-chat-btn {
   background: #18181b;
   color: white;
@@ -321,18 +339,15 @@ body, h1, p, input, button {
   transition: all 0.15s;
   text-align: center;
 }
-
 .new-chat-btn:hover {
   background: #2c2c30;
   transform: scale(1.02);
 }
-
 .conv-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-
 .conv-item {
   display: flex;
   align-items: center;
@@ -344,17 +359,14 @@ body, h1, p, input, button {
   color: #4b5563;
   transition: background 0.15s;
 }
-
 .conv-item:hover {
   background: #f3f4f6;
 }
-
 .conv-item.active {
   background: #f3f4f6;
   color: #171717;
   font-weight: 500;
 }
-
 .conv-title {
   flex: 1;
   white-space: nowrap;
@@ -362,7 +374,6 @@ body, h1, p, input, button {
   text-overflow: ellipsis;
   margin-right: 8px;
 }
-
 .del-btn {
   background: none;
   border: none;
@@ -373,13 +384,46 @@ body, h1, p, input, button {
   border-radius: 4px;
   transition: color 0.1s;
 }
-
 .del-btn:hover {
   color: #ef4444;
 }
 
+/* ---- 移动端顶部导航 ---- */
+.mobile-nav {
+  display: none;
+}
+@media (max-width: 700px) {
+  .mobile-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f2;
+    margin-bottom: 8px;
+    border-radius: 16px;
+  }
+  .mobile-nav select {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 20px;
+    border: 1px solid #e5e7eb;
+    font-size: 0.85rem;
+    background: white;
+  }
+  .mobile-new-chat-btn {
+    background: #18181b;
+    color: white;
+    border: none;
+    border-radius: 30px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+}
 
-/* ---- 主聊天区域 ---- */
+/* ---- 主聊天区 ---- */
 .chat-container {
   flex: 1;
   max-width: 860px;
@@ -419,7 +463,6 @@ h1 {
   margin-bottom: 20px;
 }
 
-/* 自定义滚动条 */
 .chat-box::-webkit-scrollbar {
   width: 6px;
 }
@@ -609,109 +652,80 @@ button:disabled {
   color: #18181b;
 }
 
-/* 移动端适配 */
+/* ======== 移动端专用样式 ======== */
 @media (max-width: 700px) {
-  /* 隐藏侧边栏，让主区域占满全屏 */
   .sidebar {
     display: none;
   }
 
-  /* 主布局改为纯聊天区，取消 flex 布局 */
   .chat-layout {
-    display: block;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
-    padding: 0;
   }
 
-  /* 主聊天区域全宽，减少内边距 */
   .chat-container {
     max-width: 100%;
     margin: 0;
-    padding: 12px 10px;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* 标题和副标题缩小 */
-  h1 {
-    font-size: 1.4rem;
-    margin-bottom: 2px;
-  }
-  .subtitle {
-    font-size: 0.75rem;
-    margin-bottom: 12px;
-  }
-
-  /* 聊天消息区域自动填充剩余空间 */
-  .chat-box {
+    padding: 8px 8px 12px 8px;
     flex: 1;
-    padding: 12px;
-    border-radius: 16px;
-    margin-bottom: 10px;
+    height: auto;
   }
 
-  /* 消息气泡宽度更宽，充分利用空间 */
+  h1 {
+    font-size: 1.3rem;
+    padding-top: 4px;
+  }
+
+  .subtitle {
+    font-size: 0.7rem;
+    margin-bottom: 8px;
+  }
+
+  .chat-box {
+    padding: 10px;
+    border-radius: 16px;
+    margin-bottom: 8px;
+  }
+
   .content {
     max-width: 85%;
     padding: 10px 14px;
     font-size: 0.9rem;
   }
-  .message.user .content {
-    max-width: 85%;
-  }
 
-  /* 确保头像在小屏幕上不被挤压 */
   .avatar {
     width: 30px;
     height: 30px;
-    font-size: 16px;
+    font-size: 15px;
   }
 
-  /* Token 信息缩小 */
   .token-info {
-    font-size: 0.7rem;
-    margin-bottom: 6px;
+    font-size: 0.65rem;
+    margin-bottom: 4px;
   }
 
-  /* 输入区域移动端优化 */
   .input-area {
-    padding: 6px 8px 6px 14px;
+    padding: 8px 10px;
     border-radius: 40px;
     gap: 6px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
   }
 
-  /* 输入框 */
   .input-area input {
-    flex: 1;
-    font-size: 16px;          /* 禁止 iOS 自动缩放 */
-    padding: 10px 0;
-    min-width: 0;
+    font-size: 16px;
+    padding: 8px 0;
   }
 
-  /* 所有按钮增大触控区域 */
   button {
-    padding: 10px 16px;
-    font-size: 0.9rem;
-    min-height: 44px;         /* 满足 WCAG 触控尺寸 */
-    min-width: 44px;
-  }
-
-  /* 发送按钮保持主色调 */
-  .input-area button:not(:last-child) {
-    padding: 8px 16px;
-  }
-
-  /* 停止按钮的次要样式也保持 */
-  .input-area button:last-of-type {
+    min-height: 40px;
+    min-width: 40px;
     padding: 8px 14px;
+    font-size: 0.85rem;
   }
 
-  /* 消息操作按钮保持可用 */
   .message-actions button {
-    padding: 4px 10px;
-    font-size: 12px;
+    padding: 4px 8px;
+    font-size: 11px;
   }
 }
 </style>
